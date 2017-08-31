@@ -1,17 +1,20 @@
 # Encoding of rules from http://www.dtic.mil/get-tr-doc/pdf?AD=ADA021929
 # Automatic Translation of English Text to Phonetics by Means of Letter-to-Sound Rules
 # H. Elovitz, R. Johnson. A. McHugh, J. Shore
+import re
+from collections import OrderedDict
+
 punct_rules = """
 [ ]'=/ /;
 [ - ]=/ /;
 [ ]=/< >/;
-[-]/<->;
+[-]=/<->/;
 . [' S]=/Z/;
 #:.E [' S']=/Z/;
 # [' S]=/Z/;
 [' ]=/ /;
 [,]=/<,>/;
-[.]=/<.>;
+[.]=/<.>/;
 [?]=/<?>/;
 """
 
@@ -34,7 +37,7 @@ a_rules = """
 [A]^:=/EY/;
  [ARR]=/AX R/;
 [ARR]=/AE R/;
- :[AR] =/AA R/
+ :[AR] =/AA R/;
 [AR] =/ER/;
 [AR]=/AA R/;
 [AIR]=/EH R/;
@@ -443,6 +446,7 @@ all_rules += y_rules
 all_rules += z_rules
 all_rules += num_rules
 
+letters = "A B C D E F G H I J K L M N O P Q R S T U V W X Y Z"
 vowels = "A E I O U Y"
 consonants = "B C D F G H J K L M N P Q R S T V W X Z"
 voiced_consonants = "B D V G J L M N R W Z"
@@ -463,8 +467,18 @@ front_vowels = "E I Y"
 # + = a front vowel
 # : = 0 or more consonants
 special = "# * , $ % & @ ^ + :"
-
-sep_rules = [ar.strip() for ar in all_rules.split(";") if ar.strip() != ""]
+complex_exp = {"#": "[{}]+".format("".join(vowels.split(" "))),
+               ":": "[{}]*".format("".join(consonants.split(" "))),
+               "^": "[{}]".format("".join(consonants.split(" "))),
+               "%": "(?:" + "|".join(" ".split(suffixes)) + ")",
+               "&": "(?:" + "|".join(" ".split(sibilants)) + ")",
+               "@": "[{}]".format("".join(consonants.split(" "))),
+               ".": "[.]",
+               "+": "[{}]".format("".join(front_vowels.split(" "))),
+               "'": "[']",
+               " ": "[ ]"}
+for l in letters.split():
+    complex_exp[l] = "[{}]".format(l)
 
 def parse_and_build_rule_function(rule):
     lhs, rhs = rule.split("=")
@@ -472,6 +486,93 @@ def parse_and_build_rule_function(rule):
     prefix = lhs.split("[")[0]
     center = lhs.split("[")[1].split("]")[0]
     postfix = lhs.split("]")[-1]
-    from IPython import embed; embed(); raise ValueError()
+    # check if rule is simple or complex, return function handles
+    if len([c for c in rule if c != " " and c in special]) > 0:
+        def complex_rule(string, pos, rule=rule):
+            # complex rules have special operators, need regex
+            lhs, rhs = rule.split("=")
+            target = rhs.replace("/", "")
+            prefix = lhs.split("[")[0]
+            center = lhs.split("[")[1].split("]")[0]
+            postfix = lhs.split("]")[-1]
+            if string[pos:pos + len(center)] != center:
+                return False
+            pre_stack = [p for p in prefix]
+            pre_pos = pos - len(prefix)
+            if len(prefix) > 0:
+                #print("complex_pre")
+                if "@" in rule:
+                    print(rule)
+                regex_ = "".join([complex_exp[p] for p in prefix])
+                # don't want negative slicing!
+                s = max(pre_pos, 0)
+                ret = re.match(regex_, string[s:pos])
+                if ret is None:
+                    return False
+            post_pos = pos + len(center)
+            if len(postfix) > 0:
+                # print("complex_post")
+                regex_ = "".join([complex_exp[p] for p in postfix])
+                ret = re.match(regex_, string[post_pos:])
+                if ret is None:
+                    return False
+            advance_pos = len(center)
+            return True, advance_pos, rule, target
+        return center[0], complex_rule
+    else:
+        def simple_rule(string, pos, rule=rule):
+            # simple rules are much faster to check
+            # could pre calculate these...
+            lhs, rhs = rule.split("=")
+            target = rhs.replace("/", "")
+            prefix = lhs.split("[")[0]
+            center = lhs.split("[")[1].split("]")[0]
+            postfix = lhs.split("]")[-1]
+            if string[pos:pos + len(center)] != center:
+                return False
+            pre_pos = pos - len(prefix)
+            if len(prefix) > 0:
+                # print("simple_pre")
+                if pre_pos < 0:
+                    return False
+                if string[pre_pos:pos] != prefix:
+                    return False
+            post_pos = pos + len(center)
+            if len(postfix) > 0:
+                # print("simple_post")
+                if string[post_pos:] != postfix:
+                    return False
+            advance_pos = len(center)
+            return True, advance_pos, rule, target
+        return center[0], simple_rule
 
-[parse_and_build_rule_function(sr) for sr in sep_rules]
+sep_rules = [ar.strip() for ar in all_rules.split(";") if ar.strip() != ""]
+all_functions = [parse_and_build_rule_function(sr) for sr in sep_rules]
+family_lookup = OrderedDict()
+for af in all_functions:
+    if af[0] not in family_lookup:
+        family_lookup[af[0]] = []
+    family_lookup[af[0]].append(af[1])
+
+def rule_g2p(string):
+    # could store negative results to get stronger "program traces"
+    final_phones = []
+    final_rules = []
+    pos = 0
+    while pos < len(string):
+        function_list = family_lookup[string[pos]]
+        for f in function_list:
+            r = f(tst, pos)
+            if r != False:
+                advance_pos = r[1]
+                rule = r[2]
+                phones = r[3]
+                final_rules.append(rule)
+                final_phones.append(phones)
+                break
+        pos += advance_pos
+    return final_rules, final_phones
+
+tst = "HELLO THERE YOU SEXY BEAST"
+r = rule_g2p(tst)
+from IPython import embed; embed(); raise ValueError()
