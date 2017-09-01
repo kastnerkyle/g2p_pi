@@ -501,8 +501,6 @@ def parse_and_build_rule_function(rule):
             pre_pos = pos - len(prefix)
             if len(prefix) > 0:
                 #print("complex_pre")
-                if "@" in rule:
-                    print(rule)
                 regex_ = "".join([complex_exp[p] for p in prefix])
                 # don't want negative slicing!
                 s = max(pre_pos, 0)
@@ -562,7 +560,7 @@ def rule_g2p(string):
     while pos < len(string):
         function_list = family_lookup[string[pos]]
         for f in function_list:
-            r = f(tst, pos)
+            r = f(string, pos)
             if r != False:
                 advance_pos = r[1]
                 rule = r[2]
@@ -573,6 +571,11 @@ def rule_g2p(string):
         pos += advance_pos
     return final_rules, final_phones
 
-tst = "HELLO THERE YOU SEXY BEAST"
-r = rule_g2p(tst)
-from IPython import embed; embed(); raise ValueError()
+if __name__ == "__main__":
+    # test cases from brown corpus
+    tst = "'TAUGHT TO GROW'?" # easiest is to look for leading ' and change it...
+    tst = "TAUGHT TO GROW?"
+    r = rule_g2p(tst)
+    print(tst)
+    print(r[0])
+    print(r[1])
