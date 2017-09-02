@@ -1210,7 +1210,7 @@ for k, v in cmu.items():
 cmu = new_cmu
 
 
-def hybrid_g2p(line, force_rule=False):
+def hybrid_g2p(line, force_rule=False, hyphenate=False):
     # hacky cleanup to avoid random errors
     line = line.replace(".", " . ")
     line = line.replace("!", " ! ")
@@ -1236,7 +1236,7 @@ def hybrid_g2p(line, force_rule=False):
         if li in cmu and not force_rule:
             ri = (cmu[li][0], [None])
         else:
-            ri = rule_g2p(li)
+            ri = rule_g2p(li, hyphenate=False)
         out.append(ri)
     return out
 
