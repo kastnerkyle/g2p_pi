@@ -2,7 +2,10 @@
 # Automatic Translation of English Text to Phonetics by Means of Letter-to-Sound Rules
 # H. Elovitz, R. Johnson. A. McHugh, J. Shore
 import re
+import json
+import os
 from collections import OrderedDict
+
 
 punct_rules = """
 [ ]'=/ /;
@@ -1056,6 +1059,12 @@ del patterns
 del exceptions
 
 def rule_g2p(string, hyphenate=True):
+    # scare/air quotes are ignored
+    if string[0] == "'":
+        string = string[1:]
+    if string[-1] == "'":
+        string = string[:-1]
+    # rule_g2p("CRACKDOWNS")
     # could store negative results to get stronger "program traces"
     final_phones = []
     final_rules = []
@@ -1076,6 +1085,7 @@ def rule_g2p(string, hyphenate=True):
         pos += 1
 
     pos = 0
+    # need to fix this logic!
     pos_to_phones = {}
     pos_to_rules = {}
     while pos < len(string):
@@ -1127,8 +1137,111 @@ def rule_g2p(string, hyphenate=True):
         abs_final_rules.append(truly_final_rules[-1])
     return abs_final_phones, abs_final_rules
 
+# get cmudict from https://github.com/hyperreality/Poetry-Tools/tree/master/poetrytools/cmudict
+with open(os.path.join(os.path.dirname(__file__), "cmudict.json")) as json_file:
+    cmu = json.load(json_file)
+
+g_set = set()
+p_set = set()
+for k, v in cmu.items():
+    g_set |= set(k)
+    p_set |= set(tuple(v[0]))
+
+g_set = sorted(list(g_set))
+p_set = sorted(list(p_set))
+
+new_p_lookup = {}
+for p in p_set:
+    if "0" in p or "1" in p or "2" in p:
+        new_p_lookup[p] = p[:-1]
+    else:
+        new_p_lookup[p] = p
+
+# http://www.dtic.mil/get-tr-doc/pdf?AD=ADA021929
+# http://psych.colorado.edu/~kimlab/jurafskymartinch7draft.pdf
+cmu_phones = sorted(list(set(new_p_lookup.values())))
+arpabet_to_ipa = {"IY": "IY",
+                  "IH": "IH",
+                  "EY": "EY",
+                  "EH": "EH",
+                  "AE": "AE",
+                  "AA": "AA",
+                  "AO": "AO",
+                  "UH": "UH",
+                  "OW": "OW",
+                  "UW": "UW",
+                  "AH": "AH",
+                  "ER": "ER",
+                  "AY": "AY",
+                  "AW": "AW",
+                  "OY": "OY",
+                  "AX": "AX",
+                  "P": "P",
+                  "T": "T",
+                  "K": "K",
+                  "B": "B",
+                  "D": "D",
+                  "G": "G",
+                  "M": "M",
+                  "N": "N",
+                  "NG": "NX",
+                  "F": "F",
+                  "V": "V",
+                  "TH": "TH",
+                  "DH": "DH",
+                  "S": "S",
+                  "Z": "Z",
+                  "SH": "SH",
+                  "ZH": "ZH",
+                  "CH": "CH",
+                  "JH": "JH",
+                  "L": "L",
+                  "W": "W",
+                  "R": "R",
+                  "Y": "Y",
+                  "HH": "HH",
+                  # NO EQUIVALENT FOR "WH" in ARPABET :|
+                  }
+
+# gotta replace by IPA compatible
+new_cmu = {}
+for k, v in cmu.items():
+    new_cmu[k.upper()] = [[arpabet_to_ipa[new_p_lookup[vi]] for vi in v[0]]]
+cmu = new_cmu
+
+
+def hybrid_g2p(line, force_rule=False):
+    # hacky cleanup to avoid random errors
+    line = line.replace(".", " . ")
+    line = line.replace("!", " ! ")
+    line = line.replace("?", " ? ")
+    out = []
+    word_split = [li for li in line.split(" ") if li != ""]
+    for li in word_split:
+        try:
+            if li[0] == "'":
+                li = li[1:]
+
+            if li[-1] == "'":
+                li = li[:-1]
+
+            if li[0] == "-":
+                li = li[1:]
+
+            if li[-1] == "-":
+                li = li[:-1]
+        except IndexError:
+            continue
+
+        if li in cmu and not force_rule:
+            ri = (cmu[li][0], [None])
+        else:
+            ri = rule_g2p(li)
+        out.append(ri)
+    return out
+
+
 if __name__ == "__main__":
-    # test cases from brown corpus
     tst = "'TAUGHT TO GROW'?" # easiest is to look for leading ' and change it...
     tst = "TAUGHT TO GROW?"
     tst = "MACHINES DON'T NEED TO FEEL FEELINGS."
@@ -1137,7 +1250,6 @@ if __name__ == "__main__":
     # edge case here for hyphenation
     tst = "DON'T GO TOWARDS THE ALASKAN TUNDRA - IT HAS EXTREME DANGERS!"
     tst = "DON'T GO TOWARDS THE ALASKAN TUNDRA-IT HAS EXTREME DANGERS!"
-    r = rule_g2p(tst)
+    r = hybrid_g2p(tst)
     print(tst)
-    print(r[0])
-    print(r[1])
+    print(r)
